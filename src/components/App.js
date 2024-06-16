@@ -5,15 +5,23 @@ const App = () => {
     const [board, setBoard] = useState(Array(9).fill(null));
     const [isXNext, setIsXNext] = useState(true);
     const [player, setPlayer] = useState(null);
+    const [selectedSigns, setSelectedSigns] = useState({ X: null, O: null });
     const [ws, setWs] = useState(null);
 
     useEffect(() => {
         const socket = new WebSocket('ws://localhost:5000');
 
         socket.onmessage = (message) => {
-            const { gameState, currentPlayer } = JSON.parse(message.data);
-            setBoard(gameState);
-            setIsXNext(currentPlayer === 'X');
+            const data = JSON.parse(message.data);
+
+            if (data.type === 'gameState') {
+                setBoard(data.gameState);
+                setIsXNext(data.currentPlayer === 'X');
+            }
+
+            if (data.type === 'signSelection') {
+                setSelectedSigns(data.selectedSigns);
+            }
         };
 
         setWs(socket);
@@ -26,7 +34,14 @@ const App = () => {
     const handleClick = (index) => {
         if (!ws || board[index] || calculateWinner(board) || (isXNext && player !== 'X') || (!isXNext && player !== 'O')) return;
 
-        ws.send(JSON.stringify({ index, player }));
+        ws.send(JSON.stringify({ type: 'move', index, player }));
+    };
+
+    const handleSignSelection = (sign) => {
+        if (!ws || selectedSigns[sign]) return;
+
+        setPlayer(sign);
+        ws.send(JSON.stringify({ type: 'selectSign', player: sign, sign }));
     };
 
     const renderSquare = (index) => {
@@ -43,8 +58,8 @@ const App = () => {
     return (
         <div className="game">
             <div className="player-selection">
-                <button onClick={() => setPlayer('X')} disabled={player !== null}>Play as X</button>
-                <button onClick={() => setPlayer('O')} disabled={player !== null}>Play as O</button>
+                <button onClick={() => handleSignSelection('X')} disabled={selectedSigns.X !== null}>Play as X</button>
+                <button onClick={() => handleSignSelection('O')} disabled={selectedSigns.O !== null}>Play as O</button>
             </div>
             <div className="game-board">
                 <div className="status">{status}</div>

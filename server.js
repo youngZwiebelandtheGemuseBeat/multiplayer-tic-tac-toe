@@ -4,8 +4,7 @@ const http = require('http');
 const WebSocket = require('ws');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-
+const PORT = 5000;
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -16,34 +15,50 @@ app.get('*', (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-let connections = [];
 let currentPlayer = 'X';
 let gameState = Array(9).fill(null);
+let selectedSigns = { X: null, O: null };
 
 wss.on('connection', (ws) => {
-    connections.push(ws);
-
     ws.on('message', (message) => {
-        const { index, player } = JSON.parse(message);
+        const data = JSON.parse(message);
 
-        if (player !== currentPlayer || gameState[index] || calculateWinner(gameState)) {
-            return;
+        if (data.type === 'move') {
+            const { index, player } = data;
+
+            if (player !== currentPlayer || gameState[index] || calculateWinner(gameState)) {
+                return;
+            }
+
+            gameState[index] = player;
+            currentPlayer = player === 'X' ? 'O' : 'X';
+
+            broadcast({ type: 'gameState', gameState, currentPlayer });
         }
 
-        gameState[index] = player;
-        currentPlayer = player === 'X' ? 'O' : 'X';
+        if (data.type === 'selectSign') {
+            const { player, sign } = data;
 
-        connections.forEach((conn) => {
-            conn.send(JSON.stringify({ gameState, currentPlayer }));
-        });
+            if (selectedSigns[sign] || (player !== 'X' && player !== 'O')) {
+                return;
+            }
+
+            selectedSigns[sign] = player;
+            broadcast({ type: 'signSelection', selectedSigns });
+        }
     });
 
-    ws.on('close', () => {
-        connections = connections.filter((conn) => conn !== ws);
-    });
-
-    ws.send(JSON.stringify({ gameState, currentPlayer }));
+    ws.send(JSON.stringify({ type: 'gameState', gameState, currentPlayer }));
+    ws.send(JSON.stringify({ type: 'signSelection', selectedSigns }));
 });
+
+const broadcast = (data) => {
+    wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(data));
+        }
+    });
+};
 
 const calculateWinner = (squares) => {
     const lines = [
